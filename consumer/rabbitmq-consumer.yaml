@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: consumer-stateful-set
+  labels:
+    app: consumer
+spec:
+  replicas: 10
+  serviceName: "consumer"
+  selector:
+    matchLabels:
+      app: consumer
+  template:
+    metadata:
+      labels:
+        app: consumer
+    spec:
+      terminationGracePeriodSeconds: 10
+      containers:
+        - image: maoltr/rabbitmq-consumer
+          imagePullPolicy: Always
+          name: rabbitmq-consumer
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                 fieldPath: metadata.name
+            - name: RABBITMQ_SERVER
+              value: ""
+            - name: HUB_COUNT
+              value: "7000"
+
