@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/streadway/amqp"
@@ -28,6 +29,7 @@ func main() {
 		rabbitmqServer = rabbitmqServerStr
 	}
 
+	// msgs per second
 	msgRate := 1000
 	msgRateStr := os.Getenv("MSG_RATE")
 	if msgRateStr != "" {
@@ -42,7 +44,7 @@ func main() {
 		msgCount = int(msgBurst64)
 	}
 
-	sleepMs := 1000 / (msgRate / msgCount)
+	sleepMs := 1000 / msgRate
 
 	var conn *amqp.Connection
 	for {
@@ -66,18 +68,25 @@ func main() {
 	}
 	defer ch.Close()
 
+	wg := &sync.WaitGroup{}
 	for i := 0; i < replicasCount; i++ {
-		go producerForReplica(ch, hubCount, msgCount, i, sleepMs)
+		wg.Add(1)
+		go producerForReplica(ch, hubCount, msgCount, i, sleepMs, wg)
 	}
+
+	wg.Wait()
 }
 
-func producerForReplica(ch *amqp.Channel, hubCount, msgCount, replica, sleepMs int) {
+func producerForReplica(ch *amqp.Channel, hubCount, msgCount, replica, sleepMs int, wg *sync.WaitGroup) {
 	for i := 0; i < msgCount; i++ {
-		sendMsgToAllHubs(ch, hubCount, replica, sleepMs)
+		sendMsgToAllHubs(ch, hubCount, replica)
+		time.Sleep(time.Millisecond * time.Duration(sleepMs))
 	}
+
+	wg.Done()
 }
 
-func sendMsgToAllHubs(ch *amqp.Channel, hubCount, replica, sleepMs int) {
+func sendMsgToAllHubs(ch *amqp.Channel, hubCount, replica int) {
 	for i := 0; i < hubCount; i++ {
 		var q amqp.Queue
 		var err error
@@ -98,6 +107,8 @@ func sendMsgToAllHubs(ch *amqp.Channel, hubCount, replica, sleepMs int) {
 			break
 		}
 
+		fmt.Println(q.Name)
+
 		body := "Hello World!"
 		err = ch.Publish("",
 			q.Name,
@@ -107,7 +118,5 @@ func sendMsgToAllHubs(ch *amqp.Channel, hubCount, replica, sleepMs int) {
 				ContentType: "text/plain",
 				Body:        []byte(body),
 			})
-
-		time.Sleep(time.Millisecond * time.Duration(sleepMs))
 	}
 }
